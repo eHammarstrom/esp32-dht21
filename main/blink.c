@@ -27,8 +27,8 @@ typedef uint64_t u64;
 #define CHECK(code) if (code != ESP_OK) { LOG("ESP_ERR: %s", #code); }
 
 /* 40 MHz crystal */
-#define CLOCK_RATE_MHZ (40)
-#define CLOCK_RATE_HZ (40 * 1000000)
+#define CLOCK_RATE_MHZ (240)
+#define CLOCK_RATE_HZ (CLOCK_RATE_MHZ * 1000000)
 
 #define BLINK_GPIO GPIO_NUM_2
 #define DHT21_SENSOR_GPIO GPIO_NUM_25
@@ -68,7 +68,10 @@ void dht21_poll_data(gpio_num_t pin, struct dht21_data *data)
 	// vTaskDelay(vTaskMS(1));
 	ets_delay_us(1000);
 	gpio_set_level(pin, HIGH);
+	clock_count = xthal_get_ccount();
 	ets_delay_us(30);
+	diff_us = clock_diff_us(clock_count);
+	LOG("MY CLOCK HIGH %u us", diff_us);
 
 	/* Enable input and receive OK signal */
 	CHECK(gpio_set_direction(pin, GPIO_MODE_INPUT));
@@ -99,7 +102,7 @@ void dht21_poll_data(gpio_num_t pin, struct dht21_data *data)
 			LOG("Got 1");
 		} else {
 			/* erroneous signal */
-			LOG("Erroneous signal! us = %u", diff_us);
+			// LOG("Erroneous signal! us = %u", diff_us);
 		}
 	}
 
@@ -129,7 +132,7 @@ u32 clock_diff_us(u32 last_ccount)
 	/* FIXME: if ccount == 0, no ccount reg */
 	current_ccount = xthal_get_ccount();
 
-	LOG("%u - %u", current_ccount, last_ccount);
+	// LOG("%u - %u", current_ccount, last_ccount);
 
 	if (current_ccount >= last_ccount) {
 		return (current_ccount - last_ccount) / CLOCK_RATE_MHZ;
