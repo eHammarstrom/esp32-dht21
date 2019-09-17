@@ -26,3 +26,6 @@ bool dht21_checksum_ok(struct dht21 *data);
  */
 void dht21_poll_data(gpio_num_t pin, struct dht21 *data);
 
+i16 dht21_temperature(struct dht21 *data);
+u16 dht21_humidity(struct dht21 *data);
+

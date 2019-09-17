@@ -1,21 +1,24 @@
 #include "utils.h"
 
-void print_bits(char buf[], int nbits)
+void print_bits(char buf[], int nbyte)
 {
         int i, bit;
         char c;
+	char cs[9];
+
+	cs[8] = 0;
 
         //printf("bytes to read: %d\n", bytes_to_read); //DEBUG
 
-        for (i = 0; i < nbits; ++i) {
+        for (i = 0; i < nbyte; ++i) {
                 c = buf[i];
 
                 for (bit = 0; bit < 8; ++bit) {
-                        printf("%i", c & 1);
+			cs[7 - bit] = (c & 1) + 48; // to ascii
                         c >>= 1;
                 }
 
-                printf("\n");
+		printf("%s  ", cs);
         }
 
         printf("\n");

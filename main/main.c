@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <types.h>
 #include <utils.h>
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
@@ -49,5 +50,11 @@ void app_main(void)
 		dht21_poll_data(DHT21_SENSOR_GPIO, &sensor_data);
 
 		vTaskDelay(vTaskMS(3000));
+
+		if (dht21_checksum_ok(&sensor_data)) {
+			LOG("temp = %d, hum = %u", dht21_temperature(&sensor_data), dht21_humidity(&sensor_data));
+		}
+
+		memset(&sensor_data, 0, sizeof(sensor_data));
 	}
 }

@@ -89,3 +89,33 @@ void dht21_poll_data(gpio_num_t pin, struct dht21 *data)
 	LOG("checksum=%d", dht21_checksum(data));
 #endif
 }
+
+i16 dht21_temperature(struct dht21 *data)
+{
+	i16 temperature;
+	bool negate;
+
+	/* check negation bit */
+	negate = TEMP_HIGH(data) & 0x80;
+
+	temperature = ((TEMP_HIGH(data) & 0x7F) * 256) + // 0x7F00 * 256 without negation bit
+		((TEMP_LOW(data) & 0xF0) >> 4) * 16 +    // 0x00F0 * 16
+		(TEMP_LOW(data) & 0x0F);                 // 0x000F * 1
+
+	print_bits((char *) data->byte + 2, 2);
+
+	return negate ? -temperature : temperature;
+}
+
+u16 dht21_humidity(struct dht21 *data)
+{
+	u16 humidity;
+
+	humidity = HUM_HIGH(data) * 256 +            // 0xFF00 * 256
+		((HUM_LOW(data) & 0xF0) >> 4) * 16 + // 0x00F0 * 16
+		(HUM_LOW(data) & 0x0F);              // 0x000F * 1
+
+
+	return humidity;
+}
+
