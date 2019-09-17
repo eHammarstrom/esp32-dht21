@@ -14,15 +14,18 @@
 #include "driver/gpio.h"
 #include "sdkconfig.h"
 
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
+typedef uint8_t  u8;  typedef int8_t  i8;
+typedef uint16_t u16; typedef int16_t i16;
+typedef uint32_t u32; typedef int32_t i32;
+typedef uint64_t u64; typedef int64_t i64;
+
+//#define DBG_SIGNAL
+// #define DBG_CHKSUM
 
 #define HIGH 1
 #define LOW 0
 
-#define LOG(fmt, ...) printf("LOG: " #fmt "\n", ##__VA_ARGS__)
+#define LOG(fmt, ...) printf("LOG: " fmt "\n", ##__VA_ARGS__)
 
 #define CHECK(code) if (code != ESP_OK) { LOG("ESP_ERR: %s", #code); }
 
@@ -37,11 +40,15 @@ typedef uint64_t u64;
 
 bool wait_for_signal(gpio_num_t, bool);
 u32 clock_diff_us(u32);
+void print_bits(char buf[], int nbits);
 
-struct dht21_data {
-	uint16_t humidity;
-	uint16_t temperature;
-	uint8_t _parity;
+#define HUM_HIGH(x)  (x->byte[0])
+#define HUM_LOW(x)   (x->byte[1])
+#define TEMP_HIGH(x) (x->byte[2])
+#define TEMP_LOW(x)  (x->byte[3])
+#define PARITY(x)    (x->byte[4])
+struct dht21 {
+	u8 byte[5];
 };
 
 void dht21_init(gpio_num_t pin)
@@ -52,12 +59,29 @@ void dht21_init(gpio_num_t pin)
 	gpio_pad_select_gpio(pin);
 }
 
+bool dht21_checksum(struct dht21 *data)
+{
+	u8 hum_high = HUM_HIGH(data);
+	u8 hum_low = HUM_LOW(data);
+	u8 temp_high = TEMP_HIGH(data);
+	u8 temp_low = TEMP_LOW(data);
+
+	u8 sum = hum_high + hum_low + temp_high + temp_low;
+
+#ifdef DBG_CHKSUM
+	printf("chk %x %x %x %x == %x real(%x)\n",
+			hum_high, hum_low, temp_high, temp_low, PARITY(data), sum);
+#endif
+
+	return sum == PARITY(data);
+}
+
 /**
  * Polls the DHT21 sensor for humidity and temperature data.
  *
  * The signal pattern below is found in the DHT21 technical reference.
  */
-void dht21_poll_data(gpio_num_t pin, struct dht21_data *data)
+void dht21_poll_data(gpio_num_t pin, struct dht21 *data)
 {
 	u32 clock_count, diff_us;
 	bool signal_error = 0;
@@ -65,21 +89,14 @@ void dht21_poll_data(gpio_num_t pin, struct dht21_data *data)
 	/* Signal READY */
 	CHECK(gpio_set_direction(pin, GPIO_MODE_OUTPUT));
 	gpio_set_level(pin, LOW);
-	// vTaskDelay(vTaskMS(1));
 	ets_delay_us(1000);
 	gpio_set_level(pin, HIGH);
-	clock_count = xthal_get_ccount();
 	ets_delay_us(30);
-	diff_us = clock_diff_us(clock_count);
-	LOG("MY CLOCK HIGH %u us", diff_us);
 
 	/* Enable input and receive OK signal */
 	CHECK(gpio_set_direction(pin, GPIO_MODE_INPUT));
 	signal_error |= wait_for_signal(pin, LOW);
-	clock_count = xthal_get_ccount();
 	signal_error |= wait_for_signal(pin, HIGH);
-	diff_us = clock_diff_us(clock_count);
-	LOG("OK SIGNAL HIGH %u us", diff_us);
 	signal_error |= wait_for_signal(pin, LOW);
 
 	if (signal_error) {
@@ -87,28 +104,60 @@ void dht21_poll_data(gpio_num_t pin, struct dht21_data *data)
 		return;
 	}
 
-	for (u8 bit_num = 39; bit_num > 0; --bit_num) {
+#ifdef DBG_SIGNAL
+	u32 sigs[40];
+#endif
+
+	for (i8 bit_received = 0; bit_received < 40; ++bit_received) {
 		/* FIXME: error if unexpected signal wait */
 		(void) wait_for_signal(pin, HIGH);
 		clock_count = xthal_get_ccount();
 		(void) wait_for_signal(pin, LOW);
 		diff_us = clock_diff_us(clock_count);
 
-		if (diff_us <= 30) {
-			/* got 0 */
-			LOG("Got 0");
-		} else if (diff_us <= 75) {
-			/* got 1 */
-			LOG("Got 1");
-		} else {
-			/* erroneous signal */
-			// LOG("Erroneous signal! us = %u", diff_us);
-		}
+		data->byte[bit_received / 8] |= diff_us >= 40 && diff_us <= 80;
+		data->byte[bit_received / 8] <<= 1;
+
+#ifdef DBG_SIGNAL
+		sigs[39 - bit_pos] = diff_us;
+#endif
 	}
 
 	/* Reset output signal to high */
 	CHECK(gpio_set_direction(pin, GPIO_MODE_OUTPUT));
 	gpio_set_level(pin, HIGH);
+
+#ifdef DBG_SIGNAL
+	printf("Sigs:");
+	for (int i = 0; i < 40; ++i)
+		printf(" %d", sigs[i]);
+	printf("\n");
+#endif
+
+#ifdef DBG_CHKSUM
+	LOG("checksum=%d", dht21_checksum(data));
+#endif
+}
+
+void print_bits(char buf[], int nbits)
+{
+        int i, bit;
+        char c;
+
+        //printf("bytes to read: %d\n", bytes_to_read); //DEBUG
+
+        for (i = 0; i < nbits; ++i) {
+                c = buf[i];
+
+                for (bit = 0; bit < 8; ++bit) {
+                        printf("%i", c & 1);
+                        c >>= 1;
+                }
+
+                printf("\n");
+        }
+
+        printf("\n");
 }
 
 /**
@@ -154,7 +203,7 @@ void app_main(void)
 	/* Set the GPIO as a push/pull output */
 	gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
 
-	struct dht21_data sensor_data;
+	struct dht21 sensor_data;
 	dht21_init(DHT21_SENSOR_GPIO);
 	gpio_set_direction(DHT21_SENSOR_GPIO, GPIO_MODE_OUTPUT);
 	gpio_set_level(DHT21_SENSOR_GPIO, HIGH);
